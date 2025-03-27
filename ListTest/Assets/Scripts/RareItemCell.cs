@@ -26,10 +26,10 @@ public class RareItemCell : MonoBehaviour
         title.text = data.itemName;
         describe.text = data.description;
 
+        // 设置品质文字与颜色
         if (!string.IsNullOrEmpty(data.quality))
         {
             quality.text = data.quality;
-
             switch (data.quality)
             {
                 case "普通": quality.color = Color.gray; break;
@@ -45,16 +45,26 @@ public class RareItemCell : MonoBehaviour
             quality.color = Color.white;
         }
 
-        // 判断是否为已加载的图标
-        if (currentIconPath == data.iconResourcePath && icon.texture != null)
+        string iconPath = data.iconResourcePath;
+
+        // 如果是相同图标且已加载，不需要再次加载
+        if (currentIconPath == iconPath && icon.texture != null)
         {
+            return;
+        }
+
+        currentIconPath = iconPath;
+
+        // 如果缓存中已有，立即设置，不显示 loading
+        if (iconCache.TryGetValue(iconPath, out Texture cached))
+        {
+            icon.texture = cached;
             icon.gameObject.SetActive(true);
             if (spinner != null) spinner.SetActive(false);
             return;
         }
 
-        currentIconPath = data.iconResourcePath;
-
+        // 准备加载新图标
         icon.texture = null;
         icon.gameObject.SetActive(false);
         if (spinner != null) spinner.SetActive(true);
@@ -62,27 +72,12 @@ public class RareItemCell : MonoBehaviour
         if (loadingCoroutine != null)
             StopCoroutine(loadingCoroutine);
 
-        loadingCoroutine = StartCoroutine(LoadIconAsync(currentIconPath));
+        loadingCoroutine = StartCoroutine(LoadIconAsync(iconPath));
     }
 
     IEnumerator LoadIconAsync(string iconPath)
     {
         string url = $"http://8.129.107.108/wp-content/uploads/2025/03/{iconPath}";
-
-        // 模拟加载延迟
-        yield return new WaitForSeconds(Random.Range(0.1f, 0.3f));
-
-        // 先查缓存
-        if (iconCache.TryGetValue(iconPath, out Texture cached))
-        {
-            if (iconPath == currentIconPath)
-            {
-                icon.texture = cached;
-                icon.gameObject.SetActive(true);
-                if (spinner != null) spinner.SetActive(false);
-            }
-            yield break;
-        }
 
         using (UnityWebRequest request = UnityWebRequestTexture.GetTexture(url))
         {
@@ -91,6 +86,7 @@ public class RareItemCell : MonoBehaviour
             if (request.result == UnityWebRequest.Result.Success)
             {
                 Texture tex = DownloadHandlerTexture.GetContent(request);
+
                 if (iconPath == currentIconPath)
                 {
                     icon.texture = tex;
@@ -100,13 +96,14 @@ public class RareItemCell : MonoBehaviour
             }
             else
             {
-                Debug.LogWarning("图标加载失败: " + url + "，错误：" + request.error);
-                // 可设置默认 fallback 图标
+                Debug.LogWarning($"图标加载失败: {url}，错误: {request.error}");
             }
 
             if (iconPath == currentIconPath && spinner != null)
                 spinner.SetActive(false);
         }
+
+        loadingCoroutine = null;
     }
 
     void OnDisable()
@@ -117,7 +114,7 @@ public class RareItemCell : MonoBehaviour
             loadingCoroutine = null;
         }
 
-        icon.texture = null;
+        // 注意：这里不再清除 icon.texture，以防止“滑动后立刻隐藏再重新加载”的情况
         icon.gameObject.SetActive(false);
         if (spinner != null) spinner.SetActive(false);
     }
